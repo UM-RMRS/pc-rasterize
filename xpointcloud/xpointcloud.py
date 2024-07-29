@@ -84,6 +84,38 @@ def _geoms_to_bboxes(geoms):
     )
 
 
+def _calculate_buffers(boxes, p=0.05):
+    bdf = boxes.bounds
+    bdf["xspan"] = bdf.maxx - bdf.minx
+    bdf["yspan"] = bdf.maxy - bdf.miny
+    min_spans = bdf[["xspan", "yspan"]].min(axis=1)
+    return (min_spans * p).to_numpy()
+
+
+def _calculate_seg_len(bounds, p=0.01):
+    minx, miny, maxx, maxy = bounds
+    min_span = min(maxx - minx, maxy - miny)
+    return p * min_span
+
+
+def _increase_bboxes_detail(bboxes, p=None):
+    args = (bboxes.total_bounds,) if p is None else (bboxes.total_bounds, p)
+    return bboxes.segmentize(_calculate_seg_len(*args))
+
+
+def _warp_bboxes_conservative(bboxes, dest_crs):
+    # Split each side of boxes into many lines. What are lines in the current
+    # CRS could become curves in the destination CRS. This step helps to
+    # preserve the curvature after the transformation.
+    bboxes = _increase_bboxes_detail(bboxes)
+    # Warp
+    warped_bboxes = bboxes.to_crs(dest_crs)
+    # Add a small buffer to the warped boxes. Line segments can only
+    # approximate curves so far. This should add enough margin to cover the
+    # formerly enclosed space.
+    return warped_bboxes.buffer(_calculate_buffers(warped_bboxes))
+
+
 def build_geobox(paths, resolution, crs=None, buffer=None):
     if isinstance(paths, str):
         paths = [paths]
@@ -194,25 +226,6 @@ def _build_input_pipeline(paths):
         pipe |= Pipeline(json.dumps([p]))
     pipe |= Stage(type="filters.merge")
     return pipe
-
-
-def _calculate_buffers(boxes, p=0.05):
-    bdf = boxes.bounds
-    bdf["xspan"] = bdf.maxx - bdf.minx
-    bdf["yspan"] = bdf.maxy - bdf.miny
-    min_spans = bdf[["xspan", "yspan"]].min(axis=1)
-    return (min_spans * p).to_numpy()
-
-
-def _calculate_seg_len(bounds, p=0.01):
-    minx, miny, maxx, maxy = bounds
-    min_span = min(maxx - minx, maxy - miny)
-    return p * min_span
-
-
-def increase_bboxes_detail(bboxes, p=None):
-    args = (bboxes.total_bounds,) if p is None else (bboxes.total_bounds, p)
-    return bboxes.segmentize(_calculate_seg_len(*args))
 
 
 def iqr_med_z_filter(z, k):
@@ -335,13 +348,13 @@ def bin_files_to_tiles(paths, tiles, dest_crs):
 
     if src_crs != dest_crs:
         src_bboxes = gpd.GeoSeries([i.bbox for i in infos], crs=src_crs)
-        src_buffered = src_bboxes.buffer(_calculate_buffers(src_bboxes))
-        src_bboxes = _geoms_to_bboxes(src_buffered)
-        src_bboxes = increase_bboxes_detail(src_bboxes)
-        dest_bboxes = src_bboxes.to_crs(dest_crs).to_frame("geometry")
+        src_bboxes_warped_to_dest = _warp_bboxes_conservative(
+            src_bboxes, dest_crs
+        )
+        data_bboxes_in_dest = src_bboxes_warped_to_dest.to_frame("geometry")
     else:
-        dest_bboxes = src_bboxes.to_frame("geometry")
-    dest_bboxes["path_idx"] = np.arange(len(paths))
+        data_bboxes_in_dest = src_bboxes.to_frame("geometry")
+    data_bboxes_in_dest["path_idx"] = np.arange(len(paths))
     tile_bboxes = gpd.GeoSeries(
         [tiles.crop[idx].base.extent.geom for idx in np.ndindex(tiles_shape)],
         crs=dest_crs,
@@ -351,7 +364,7 @@ def bin_files_to_tiles(paths, tiles, dest_crs):
     bins = np.empty(tiles_shape, dtype=object)
     for idx in np.ndindex(tiles_shape):
         bins[idx] = []
-    matches = tile_bboxes.sjoin(dest_bboxes).sort_values("path_idx")
+    matches = tile_bboxes.sjoin(data_bboxes_in_dest).sort_values("path_idx")
     for pi, mdf in matches.groupby("path_idx"):
         path = paths[pi]
         for row in mdf.itertuples():
