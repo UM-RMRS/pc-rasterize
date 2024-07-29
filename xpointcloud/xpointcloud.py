@@ -74,6 +74,16 @@ def get_bboxes(paths):
     return gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
 
 
+def _geoms_to_bboxes(geoms):
+    return gpd.GeoSeries(
+        [
+            shapely.geometry.box(b.minx, b.miny, b.maxx, b.maxy)
+            for b in geoms.bounds.itertuples()
+        ],
+        crs=geoms.crs,
+    )
+
+
 def build_geobox(paths, resolution, crs=None, buffer=None):
     if isinstance(paths, str):
         paths = [paths]
@@ -325,16 +335,8 @@ def bin_files_to_tiles(paths, tiles, dest_crs):
 
     if src_crs != dest_crs:
         src_bboxes = gpd.GeoSeries([i.bbox for i in infos], crs=src_crs)
-        src_bufferd = src_bboxes.buffer(_calculate_buffers(src_bboxes))
-        src_bboxes = gpd.GeoSeries(
-            src_bufferd.bounds.apply(
-                lambda row: shapely.geometry.box(
-                    row.minx, row.miny, row.maxx, row.maxy
-                ),
-                axis=1,
-            ),
-            crs=src_crs,
-        )
+        src_buffered = src_bboxes.buffer(_calculate_buffers(src_bboxes))
+        src_bboxes = _geoms_to_bboxes(src_buffered)
         src_bboxes = increase_bboxes_detail(src_bboxes)
         dest_bboxes = src_bboxes.to_crs(dest_crs).to_frame("geometry")
     else:
