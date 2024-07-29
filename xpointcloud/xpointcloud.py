@@ -339,7 +339,7 @@ def _rasterize_chunk(
     return grid_flat.reshape((shape))
 
 
-def bin_files_to_tiles(paths, tiles, dest_crs):
+def _bin_files_to_tiles(paths, tiles, dest_crs):
     pipe = _build_input_pipeline(paths)
     infos = get_quickinfo(pipe)
 
@@ -403,7 +403,7 @@ def rasterize(
         geoboxes[ind] = tiles.crop[ind].base
     geoboxes = da.from_array(geoboxes, chunks=1)
 
-    binned_paths = bin_files_to_tiles(paths, tiles, crs)
+    binned_paths = _bin_files_to_tiles(paths, tiles, crs)
     binned_paths = da.from_array(binned_paths, chunks=1)
 
     data = da.map_blocks(
