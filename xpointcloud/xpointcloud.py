@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pdal
 import rasterio as rio
+import rioxarray as xrio  # noqa: F401
 import shapely
 import xarray as xr
 from odc.geo.geobox import GeoBox, GeoboxTiles
@@ -215,6 +216,50 @@ def iqr_med_z_filter(z, k):
     return np.ones(len(z), dtype=bool)
 
 
+def _crop_pipe(pipe, bbox, tag=None):
+    minx, miny, maxx, maxy = bbox.bounds
+    tag = {} if tag is None else {"tag": tag}
+    return pipe | Stage(
+        type="filters.crop", bounds=f"([{minx},{maxx}],[{miny},{maxy}])", **tag
+    )
+
+
+def _merge_pipe(pipe, inputs=None, tag=None):
+    kwargs = {}
+    if inputs is not None:
+        inputs = list(inputs)
+        kwargs["inputs"] = inputs
+    if tag is not None:
+        kwargs["tag"] = tag
+    return pipe | Stage(type="filters.merge", **kwargs)
+
+
+def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
+    if len(paths) == 1:
+        pipe = Pipeline(json.dumps(paths))
+        info = get_quickinfo(paths[0])[0]
+        if info.crs != dest_crs:
+            pipe |= Stage(
+                type="filters.reprojection", out_srs=dest_crs.to_wkt()
+            )
+        pipe = _crop_pipe(pipe, dest_bbox)
+        return pipe
+
+    infos = [get_quickinfo(p)[0] for p in paths]
+    homogeneous_crs = all(infos[0].crs == i.crs for i in infos)
+    pipe = Pipeline()
+    for p in paths:
+        pipe |= Pipeline(json.dumps([p]))
+        if not homogeneous_crs:
+            pipe |= Stage(
+                type="filters.reprojection", out_srs=dest_crs.to_wkt()
+            )
+    pipe = _merge_pipe(pipe)
+    if homogeneous_crs:
+        pipe |= Stage(type="filters.reprojection", out_srs=dest_crs.to_wkt())
+    return _crop_pipe(pipe, dest_bbox)
+
+
 def _rasterize_chunk(
     geobox,
     paths,
@@ -240,23 +285,17 @@ def _rasterize_chunk(
     dest_crs = geobox.crs
     affine = geobox.affine
     shape = tuple(geobox.shape)
+    dest_bbox = geobox.extent.geom
     assert shape == block_info[None]["chunk-shape"]
     dtype = block_info[None]["dtype"]
     if len(paths) == 0:
         return np.full(shape, nodata, dtype=dtype)
 
     # Load points that fall within this chunk
-    bbox = geobox.extent.geom
-    minx, miny, maxx, maxy = bbox.bounds
-    pipe = _build_input_pipeline(paths)
-    infos = get_quickinfo(pipe)
-    src_crs = infos[0].crs
-    if src_crs != dest_crs:
-        pipe |= Stage(type="filters.reprojection", out_srs=dest_crs.to_wkt())
-    pipe |= Stage(
-        type="filters.crop", bounds=f"([{minx},{maxx}],[{miny},{maxy}])"
-    )
-    pipe.execute()
+    pipe = _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs)
+    n = pipe.execute()
+    if n == 0:
+        return np.full(shape, nodata, dtype=dtype)
 
     # Build the dataframe
     pts_df = pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
