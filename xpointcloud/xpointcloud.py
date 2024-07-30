@@ -286,7 +286,7 @@ def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
 def _rasterize_chunk(
     geobox,
     paths,
-    agg_func=None,
+    agg_func="max",
     nodata=np.nan,
     robust_filter=False,
     zfilter_func=None,
@@ -333,7 +333,7 @@ def _rasterize_chunk(
         pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
     )
 
-    z_agg = pts_df.groupby("_bin_").Z.max()
+    z_agg = pts_df.groupby("_bin_").Z.agg(agg_func)
     grid_flat = np.full(np.prod(shape), nodata, dtype=dtype)
     grid_flat[z_agg.index.to_numpy()] = z_agg.to_numpy()
     return grid_flat.reshape((shape))
@@ -372,9 +372,27 @@ def _bin_files_to_tiles(paths, tiles, dest_crs):
     return bins
 
 
+_DEFAULT_AGG_FUNCS = {
+    # Pandas built-in funcs
+    "count": "count",
+    "cov": "cov",
+    "max": "max",
+    "mean": "mean",
+    "median": "median",
+    "min": "min",
+    "nunique": "nunique",
+    "sem": "sem",
+    "skew": "skew",
+    "std": "std",
+    "sum": "sum",
+    "var": "var",
+}
+
+
 def rasterize(
     paths,
     like: GeoBox,
+    func=None,
     dtype=np.float32,
     nodata=np.nan,
     robust_filter=False,
@@ -383,6 +401,16 @@ def rasterize(
 ):
     if zfilter_func is not None and not callable(zfilter_func):
         raise TypeError("zfilter_func must be callable")
+    if func is None:
+        agg_func = _DEFAULT_AGG_FUNCS["max"]
+    elif callable(func):
+        agg_func = func
+    elif func in _DEFAULT_AGG_FUNCS:
+        agg_func = _DEFAULT_AGG_FUNCS[func]
+    else:
+        raise TypeError(
+            "func must be callable or one of the listed reduction functions"
+        )
     dtype = np.dtype(dtype)
 
     if isinstance(paths, str):
@@ -412,7 +440,7 @@ def rasterize(
         _rasterize_chunk,
         geoboxes,
         binned_paths,
-        agg_func=np.max,
+        agg_func=agg_func,
         nodata=nodata,
         robust_filter=robust_filter,
         zfilter_func=zfilter_func,
