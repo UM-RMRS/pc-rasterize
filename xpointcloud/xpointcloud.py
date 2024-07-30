@@ -257,6 +257,10 @@ def _merge_pipe(pipe, inputs=None, tag=None):
     return pipe | Stage(type="filters.merge", **kwargs)
 
 
+def _filter_expr_pipe(pipe, expr):
+    return pipe | Stage(type="filters.expression", expression=expr)
+
+
 def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
     if len(paths) == 1:
         pipe = Pipeline(json.dumps(paths))
@@ -288,6 +292,7 @@ def _rasterize_chunk(
     paths,
     agg_func="max",
     nodata=np.nan,
+    filter_exprs=None,
     robust_filter=False,
     zfilter_func=None,
     block_info=None,
@@ -316,6 +321,9 @@ def _rasterize_chunk(
 
     # Load points that fall within this chunk
     pipe = _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs)
+    if filter_exprs is not None:
+        for fexpr in filter_exprs:
+            pipe = _filter_expr_pipe(pipe, fexpr)
     n = pipe.execute()
     if n == 0:
         return np.full(shape, nodata, dtype=dtype)
@@ -395,6 +403,7 @@ def rasterize(
     func=None,
     dtype=np.float32,
     nodata=np.nan,
+    filter_exprs=None,
     robust_filter=False,
     zfilter_func=None,
     chunksize=None,
@@ -411,6 +420,14 @@ def rasterize(
         raise TypeError(
             "func must be callable or one of the listed reduction functions"
         )
+    if filter_exprs is not None:
+        if (
+            not isinstance(filter_exprs, (list, tuple))
+            or len(filter_exprs) == 0
+        ):
+            raise TypeError("filter_exprs must be an iterable")
+        if not all(isinstance(expr, str) for expr in filter_exprs):
+            raise TypeError("filter expressions must all be strings")
     dtype = np.dtype(dtype)
 
     if isinstance(paths, str):
@@ -442,6 +459,7 @@ def rasterize(
         binned_paths,
         agg_func=agg_func,
         nodata=nodata,
+        filter_exprs=filter_exprs,
         robust_filter=robust_filter,
         zfilter_func=zfilter_func,
         chunks=chunks,
