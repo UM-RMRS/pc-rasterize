@@ -15,11 +15,6 @@ import xarray as xr
 from odc.geo.geobox import GeoBox, GeoboxTiles
 from pdal import Pipeline, Stage
 
-
-def pdumps(obj):
-    return json.dumps([obj])
-
-
 LidarInfo = namedtuple(
     "LidarInfo",
     (
@@ -36,7 +31,7 @@ LidarInfo = namedtuple(
 
 def get_quickinfo(paths_or_pipeline):
     if isinstance(paths_or_pipeline, (str, Path)):
-        pl = pdal.Pipeline(pdumps(str(paths_or_pipeline)))
+        pl = pdal.Pipeline(json.dumps([str(paths_or_pipeline)]))
     elif isinstance(paths_or_pipeline, Iterable):
         pl = _build_input_pipeline(paths_or_pipeline)
     elif isinstance(paths_or_pipeline, pdal.Pipeline):
@@ -149,7 +144,7 @@ def load(*paths):
     paths = [p if isinstance(p, str) else str(p) for p in paths]
     pl = pdal.Pipeline()
     for p in paths:
-        pl |= pdal.Pipeline(pdumps(p))
+        pl |= pdal.Pipeline(json.dumps([p]))
     if len(paths) > 1:
         pl |= pdal.Stage(type="filters.merge")
     return execute(pl)
