@@ -29,44 +29,29 @@ LidarInfo = namedtuple(
 )
 
 
-def get_quickinfo(paths_or_pipeline):
-    if isinstance(paths_or_pipeline, (str, Path)):
-        pl = pdal.Pipeline(json.dumps([str(paths_or_pipeline)]))
-    elif isinstance(paths_or_pipeline, Iterable):
-        pl = _build_input_pipeline(paths_or_pipeline)
-    elif isinstance(paths_or_pipeline, pdal.Pipeline):
-        pl = paths_or_pipeline
+def get_file_quickinfo(path):
+    if isinstance(path, (str, Path)):
+        pipe = pdal.Pipeline(json.dumps([str(path)]))
     else:
-        raise TypeError("input must be a file path or pipeline object")
-    qinfo = pl.quickinfo
-    qinfos = qinfo[list(qinfo)[0]]
-    if isinstance(qinfos, dict):
-        qinfos = [qinfos]
-    info_objs = []
-    for info in qinfos:
-        dims = tuple(d.strip() for d in info["dimensions"].split(","))
-        n_points = info["num_points"]
-        crs = rio.CRS.from_user_input(info["srs"]["json"])
-        vert_units = info["srs"]["units"]["vertical"]
-        bounds_2d = tuple(
-            info["bounds"][k] for k in ("minx", "miny", "maxx", "maxy")
-        )
-        bounds_3d = tuple(
-            info["bounds"][k]
-            for k in ("minx", "miny", "minz", "maxx", "maxy", "maxz")
-        )
-        bbox = shapely.geometry.box(*bounds_2d)
-        info_objs.append(
-            LidarInfo(
-                n_points, dims, crs, vert_units, bounds_2d, bounds_3d, bbox
-            )
-        )
-    return info_objs
+        raise TypeError("path must be a string or Path object")
 
-
-def get_bboxes(paths):
-    infos = get_quickinfo(paths)
-    return gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
+    qinfo = pipe.quickinfo
+    info = qinfo[list(qinfo)[0]]
+    dims = tuple(d.strip() for d in info["dimensions"].split(","))
+    n_points = info["num_points"]
+    crs = rio.CRS.from_user_input(info["srs"]["json"])
+    vert_units = info["srs"]["units"]["vertical"]
+    bounds_2d = tuple(
+        info["bounds"][k] for k in ("minx", "miny", "maxx", "maxy")
+    )
+    bounds_3d = tuple(
+        info["bounds"][k]
+        for k in ("minx", "miny", "minz", "maxx", "maxy", "maxz")
+    )
+    bbox = shapely.geometry.box(*bounds_2d)
+    return LidarInfo(
+        n_points, dims, crs, vert_units, bounds_2d, bounds_3d, bbox
+    )
 
 
 def _geoms_to_bboxes(geoms):
@@ -117,8 +102,8 @@ def build_geobox(paths, resolution, crs=None, buffer=None):
     if resolution < 0:
         raise ValueError("resolution must be a positive scalar")
 
-    infos = get_quickinfo(paths)
-    boxes = get_bboxes(paths)
+    infos = [get_file_quickinfo(p) for p in paths]
+    boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
     if crs is not None:
         target_crs = crs
         boxes = boxes.to_crs(crs)
@@ -148,11 +133,6 @@ def load(*paths):
     if len(paths) > 1:
         pl |= pdal.Stage(type="filters.merge")
     return execute(pl)
-
-
-def load_to_dataframe(*paths):
-    pipeline = load(*paths)
-    return pd.concat([pd.DataFrame(arr) for arr in pipeline.arrays])
 
 
 def pdal_df_to_gdf(pts_df, crs=None):
@@ -259,7 +239,7 @@ def _filter_expr_pipe(pipe, expr):
 def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
     if len(paths) == 1:
         pipe = Pipeline(json.dumps(paths))
-        info = get_quickinfo(paths[0])[0]
+        info = get_file_quickinfo(paths[0])
         if info.crs != dest_crs:
             pipe |= Stage(
                 type="filters.reprojection", out_srs=dest_crs.to_wkt()
@@ -267,7 +247,7 @@ def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
         pipe = _crop_pipe(pipe, dest_bbox)
         return pipe
 
-    infos = [get_quickinfo(p)[0] for p in paths]
+    infos = [get_file_quickinfo(p) for p in paths]
     homogeneous_crs = all(infos[0].crs == i.crs for i in infos)
     pipe = Pipeline()
     for p in paths:
@@ -342,9 +322,44 @@ def _rasterize_chunk(
     return grid_flat.reshape((shape))
 
 
+def _homogenize_crs(infos):
+    if not all(infos[0].crs == i.crs for i in infos):
+        crs = infos[0].crs
+        new_infos = [infos[0]]
+        for info in infos[1:]:
+            if info.crs != crs:
+                bbox = gpd.GeoSeries([info.bbox], crs=info.crs)
+                warped_bbox = _warp_bboxes_conservative(bbox, crs)
+                new_bounds_2d = warped_bbox.total_bounds
+                new_bbox = shapely.geometry.box(*new_bounds_2d)
+                minx, miny, maxx, maxy = new_bounds_2d
+                new_bounds_3d = (
+                    minx,
+                    miny,
+                    info.bounds_3d[2],
+                    maxx,
+                    maxy,
+                    info.bounds_3d[5],
+                )
+            new_infos.append(
+                LidarInfo(
+                    info.n_points,
+                    info.dims,
+                    crs,
+                    info.vert_units,
+                    new_bounds_2d,
+                    new_bounds_3d,
+                    new_bbox,
+                )
+            )
+        infos = new_infos
+    return infos
+
+
 def _bin_files_to_tiles(paths, tiles, dest_crs):
-    pipe = _build_input_pipeline(paths)
-    infos = get_quickinfo(pipe)
+    infos = [get_file_quickinfo(p) for p in paths]
+    # Make sure that all bounding boxes are in the same CRS
+    infos = _homogenize_crs(infos)
 
     src_crs = infos[0].crs
     tiles_shape = tuple(tiles.shape)
