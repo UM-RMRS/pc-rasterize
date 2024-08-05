@@ -117,52 +117,10 @@ def build_geobox(paths, resolution, crs=None, buffer=None):
     )
 
 
-def execute(pipeline):
-    try:
-        _ = pipeline.metadata
-    except RuntimeError:
-        pipeline.execute()
-    return pipeline
-
-
-def load(*paths):
-    paths = [p if isinstance(p, str) else str(p) for p in paths]
-    pl = pdal.Pipeline()
-    for p in paths:
-        pl |= pdal.Pipeline(json.dumps([p]))
-    if len(paths) > 1:
-        pl |= pdal.Stage(type="filters.merge")
-    return execute(pl)
-
-
-def pdal_df_to_gdf(pts_df, crs=None):
-    x = pts_df["X"]
-    y = pts_df["Y"]
-    z = pts_df["Z"]
-    return gpd.GeoDataFrame(
-        pts_df, geometry=gpd.points_from_xy(x, y, z, crs=crs)
-    )
-
-
-def load_to_geodataframe(*paths):
-    pipeline = load(*paths)
-    crs = rio.CRS.from_user_input(pipeline.srswkt2)
-    pts_df = pd.concat([pd.DataFrame(arr) for arr in pipeline.arrays])
-    return pdal_df_to_gdf(pts_df, crs)
-
-
-def xy_to_rowcol(x, y, affine):
-    """
-    Convert (x, y) coords to (row, col) index values using the transformation.
-    """
+def _flat_index(x, y, affine, shape):
     col, row = (~affine) * (x, y)
     row = np.floor(row).astype(int)
     col = np.floor(col).astype(int)
-    return row, col
-
-
-def flat_index(x, y, affine, shape):
-    row, col = xy_to_rowcol(x, y, affine)
     return np.ravel_multi_index((row, col), shape)
 
 
@@ -188,7 +146,7 @@ def _build_y_coord(affine, shape):
     return yc.copy()
 
 
-def chunksize_2d_from_dtype(dtype):
+def _chunksize_2d_from_dtype(dtype):
     return da.empty((40_000, 40_000), dtype=dtype).chunksize
 
 
@@ -312,7 +270,7 @@ def _rasterize_chunk(
     if zfilter_func is not None:
         pts_df = pts_df[zfilter_func(pts_df.Z.to_numpy())]
     # Bin each point to a pixel location
-    pts_df["_bin_"] = flat_index(
+    pts_df["_bin_"] = _flat_index(
         pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
     )
 
@@ -449,7 +407,7 @@ def rasterize(
     affine = like.affine
     shape = tuple(like.shape)
     if chunksize is None:
-        chunksize = chunksize_2d_from_dtype(dtype)
+        chunksize = _chunksize_2d_from_dtype(dtype)
     tiles = GeoboxTiles(like, tile_shape=chunksize)
     chunks = tiles.chunks
 
