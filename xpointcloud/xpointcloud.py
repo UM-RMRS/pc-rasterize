@@ -368,7 +368,7 @@ _DEFAULT_AGG_FUNCS = {
 def rasterize(
     paths,
     like: GeoBox,
-    func=None,
+    cell_func=None,
     dtype=np.float32,
     nodata=np.nan,
     filter_exprs=None,
@@ -378,15 +378,16 @@ def rasterize(
 ):
     if zfilter_func is not None and not callable(zfilter_func):
         raise TypeError("zfilter_func must be callable")
-    if func is None:
+    if cell_func is None:
         agg_func = _DEFAULT_AGG_FUNCS["max"]
-    elif callable(func):
-        agg_func = func
-    elif func in _DEFAULT_AGG_FUNCS:
-        agg_func = _DEFAULT_AGG_FUNCS[func]
+    elif callable(cell_func):
+        agg_func = cell_func
+    elif cell_func in _DEFAULT_AGG_FUNCS:
+        agg_func = _DEFAULT_AGG_FUNCS[cell_func]
     else:
         raise TypeError(
-            "func must be callable or one of the listed reduction functions"
+            "cell_func must be callable or one of the listed reduction "
+            "functions."
         )
     if filter_exprs is not None:
         if (
