@@ -260,7 +260,7 @@ def _rasterize_chunk(
     z_agg = pts_df.groupby("_bin_").Z.agg(agg_func)
     grid_flat = np.full(np.prod(shape), nodata, dtype=dtype)
     grid_flat[z_agg.index.to_numpy()] = z_agg.to_numpy()
-    return grid_flat.reshape((shape))
+    return grid_flat.reshape(shape)
 
 
 def _homogenize_crs(infos):
