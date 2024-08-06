@@ -161,17 +161,6 @@ def _build_input_pipeline(paths):
     return pipe
 
 
-def iqr_med_z_filter(z, k):
-    iqr = z.quantile(0.75) - z.quantile(0.25)
-    med = z.median()
-    zr = (z.max() - z.min()) + 1e-6
-    rratio = iqr / zr
-    zq = np.abs((z - med) / iqr)
-    if iqr > 0 and (rratio < 0.1):
-        return zq < k
-    return np.ones(len(z), dtype=bool)
-
-
 def _crop_pipe(pipe, bbox, tag=None):
     minx, miny, maxx, maxy = bbox.bounds
     tag = {} if tag is None else {"tag": tag}
@@ -226,7 +215,6 @@ def _rasterize_chunk(
     agg_func="max",
     nodata=np.nan,
     filter_exprs=None,
-    robust_filter=False,
     zfilter_func=None,
     block_info=None,
 ):
@@ -265,8 +253,6 @@ def _rasterize_chunk(
     pts_df = pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
     pipe = None
     pts_df = pts_df[["X", "Y", "Z"]]
-    if robust_filter:
-        pts_df = pts_df[iqr_med_z_filter(pts_df.Z, 10)]
     if zfilter_func is not None:
         pts_df = pts_df[zfilter_func(pts_df.Z.to_numpy())]
     # Bin each point to a pixel location
@@ -372,7 +358,6 @@ def rasterize(
     dtype=np.float32,
     nodata=np.nan,
     filter_exprs=None,
-    robust_filter=False,
     zfilter_func=None,
     chunksize=None,
 ):
@@ -429,7 +414,6 @@ def rasterize(
         agg_func=agg_func,
         nodata=nodata,
         filter_exprs=filter_exprs,
-        robust_filter=robust_filter,
         zfilter_func=zfilter_func,
         chunks=chunks,
         meta=np.array((), dtype=dtype),
