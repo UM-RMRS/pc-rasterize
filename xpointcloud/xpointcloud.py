@@ -215,7 +215,6 @@ def _rasterize_chunk(
     agg_func="max",
     nodata=np.nan,
     filter_exprs=None,
-    zfilter_func=None,
     block_info=None,
 ):
     if isinstance(geobox, np.ndarray):
@@ -253,8 +252,6 @@ def _rasterize_chunk(
     pts_df = pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
     pipe = None
     pts_df = pts_df[["X", "Y", "Z"]]
-    if zfilter_func is not None:
-        pts_df = pts_df[zfilter_func(pts_df.Z.to_numpy())]
     # Bin each point to a pixel location
     pts_df["_bin_"] = _flat_index(
         pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
@@ -358,11 +355,8 @@ def rasterize(
     dtype=np.float32,
     nodata=np.nan,
     filter_exprs=None,
-    zfilter_func=None,
     chunksize=None,
 ):
-    if zfilter_func is not None and not callable(zfilter_func):
-        raise TypeError("zfilter_func must be callable")
     if cell_func is None:
         agg_func = _DEFAULT_AGG_FUNCS["max"]
     elif callable(cell_func):
@@ -414,7 +408,6 @@ def rasterize(
         agg_func=agg_func,
         nodata=nodata,
         filter_exprs=filter_exprs,
-        zfilter_func=zfilter_func,
         chunks=chunks,
         meta=np.array((), dtype=dtype),
     )
