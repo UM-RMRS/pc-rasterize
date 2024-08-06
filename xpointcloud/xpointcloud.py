@@ -1,6 +1,5 @@
 import json
 from collections import namedtuple
-from collections.abc import Iterable
 from pathlib import Path
 
 import dask.array as da
