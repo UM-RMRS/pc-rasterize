@@ -54,6 +54,27 @@ def get_file_quickinfo(path):
     )
 
 
+def build_geobox(paths, resolution, crs=None, buffer=None):
+    if isinstance(paths, str):
+        paths = [paths]
+    if resolution < 0:
+        raise ValueError("resolution must be a positive scalar")
+
+    infos = [get_file_quickinfo(p) for p in paths]
+    boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
+    if crs is not None:
+        target_crs = crs
+        boxes = boxes.to_crs(crs)
+    else:
+        target_crs = infos[0].crs
+    if buffer is not None:
+        boxes = boxes.buffer(buffer)
+    bbox = shapely.geometry.box(*boxes.total_bounds)
+    return GeoBox.from_bbox(
+        bbox=bbox.bounds, crs=target_crs, resolution=resolution
+    )
+
+
 def _geoms_to_bboxes(geoms):
     return gpd.GeoSeries(
         [
@@ -94,27 +115,6 @@ def _warp_bboxes_conservative(bboxes, dest_crs):
     # approximate curves so far. This should add enough margin to cover the
     # formerly enclosed space.
     return warped_bboxes.buffer(_calculate_buffers(warped_bboxes))
-
-
-def build_geobox(paths, resolution, crs=None, buffer=None):
-    if isinstance(paths, str):
-        paths = [paths]
-    if resolution < 0:
-        raise ValueError("resolution must be a positive scalar")
-
-    infos = [get_file_quickinfo(p) for p in paths]
-    boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
-    if crs is not None:
-        target_crs = crs
-        boxes = boxes.to_crs(crs)
-    else:
-        target_crs = infos[0].crs
-    if buffer is not None:
-        boxes = boxes.buffer(buffer)
-    bbox = shapely.geometry.box(*boxes.total_bounds)
-    return GeoBox.from_bbox(
-        bbox=bbox.bounds, crs=target_crs, resolution=resolution
-    )
 
 
 def _flat_index(x, y, affine, shape):
