@@ -482,7 +482,7 @@ def rasterize(
         chunks=chunks,
         meta=np.array((), dtype=dtype),
     )
-    raster = (
+    return (
         xr.DataArray(
             data,
             dims=("y", "x"),
@@ -495,7 +495,5 @@ def rasterize(
         .expand_dims(band=[1])
         .rio.set_spatial_dims(y_dim="y", x_dim="x")
         .rio.write_nodata(dtype.type(nodata))
+        .rio.write_crs(crs)
     )
-    if crs is not None:
-        raster = raster.rio.write_crs(crs)
-    return raster
