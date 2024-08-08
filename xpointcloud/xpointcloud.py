@@ -4,6 +4,7 @@ from pathlib import Path
 
 import dask.array as da
 import geopandas as gpd
+import numba as nb
 import numpy as np
 import pandas as pd
 import pdal
@@ -72,6 +73,66 @@ def build_geobox(paths, resolution, crs=None, buffer=None):
     return GeoBox.from_bbox(
         bbox=bbox.bounds, crs=target_crs, resolution=resolution
     )
+
+
+def series_to_array(func):
+    def wrapper(x):
+        if isinstance(x, pd.Series):
+            return func(x.to_numpy())
+        return func(x)
+
+    return wrapper
+
+
+@series_to_array
+@nb.jit(nopython=True, nogil=True)
+def _asm_agg(x):
+    counts = {}
+    n = 0
+    for v in x:
+        if v in x:
+            counts[v] += 1
+        else:
+            counts[v] = 1
+        n += 1
+    asm = 0.0
+    if n > 0:
+        n_inv = 1.0 / n
+        for c in counts.values():
+            p = c * n_inv
+            asm += p * p
+    return asm
+
+
+@series_to_array
+@nb.jit(nopython=True, nogil=True)
+def _entropy_agg(x):
+    counts = {}
+    n = 0
+    for v in x:
+        if v in counts:
+            counts[v] += 1
+        else:
+            counts[v] = 1
+        n += 1
+    entropy = 0.0
+    if n > 0:
+        n_inv = 1.0 / n
+        for cnt in counts.values():
+            p = cnt * n_inv
+            entropy -= p * np.log(p)
+    return entropy
+
+
+@series_to_array
+@nb.jit(nopython=True, nogil=True)
+def _cv_agg(x):
+    count = len(x)
+    s = np.sum(x)
+    ss = np.sum(x * x)
+    sd = np.sqrt((ss - ((s * s) / count)) / count)
+    m = s / count
+    return sd / m
 
 
 def _geoms_to_bboxes(geoms):
@@ -212,6 +273,7 @@ def _rasterize_chunk(
     geobox,
     paths,
     agg_func="max",
+    agg_func_args=(),
     nodata=np.nan,
     filter_exprs=None,
     block_info=None,
@@ -256,7 +318,7 @@ def _rasterize_chunk(
         pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
     )
 
-    z_agg = pts_df.groupby("_bin_").Z.agg(agg_func)
+    z_agg = pts_df.groupby("_bin_").Z.agg(agg_func, *agg_func_args)
     grid_flat = np.full(np.prod(shape), nodata, dtype=dtype)
     grid_flat[z_agg.index.to_numpy()] = z_agg.to_numpy()
     return grid_flat.reshape(shape)
@@ -343,7 +405,13 @@ _DEFAULT_AGG_FUNCS = {
     "skew": "skew",
     "std": "std",
     "sum": "sum",
+    "quantile": "quantile",
     "var": "var",
+    # Custom funcs
+    "asm": _asm_agg,
+    "cv": _cv_agg,
+    "entropy": _entropy_agg,
+    "range": lambda x: x.max() - x.min(),
 }
 
 
@@ -351,6 +419,7 @@ def rasterize(
     paths,
     like: GeoBox,
     cell_func=None,
+    cell_func_args=(),
     dtype=np.float32,
     nodata=np.nan,
     filter_exprs=None,
@@ -367,6 +436,8 @@ def rasterize(
             "cell_func must be callable or one of the listed reduction "
             "functions."
         )
+    if not isinstance(cell_func_args, (list, tuple)):
+        raise TypeError("cell_func_args must be a tuple or list")
     if filter_exprs is not None:
         if (
             not isinstance(filter_exprs, (list, tuple))
@@ -405,6 +476,7 @@ def rasterize(
         geoboxes,
         binned_paths,
         agg_func=agg_func,
+        agg_func_args=cell_func_args,
         nodata=nodata,
         filter_exprs=filter_exprs,
         chunks=chunks,
