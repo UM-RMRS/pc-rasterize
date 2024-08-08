@@ -467,7 +467,7 @@ def rasterize(
     geoboxes = da.from_array(geoboxes, chunks=1)
 
     # Array with dims equal to the number of tiles in each dim (y, x). Each
-    # element is a list of file paths that intersected the given tile.
+    # element is a list of file paths that intersected the corresponding tile.
     binned_paths = _bin_files_to_tiles(paths, tiles, crs)
     binned_paths = da.from_array(binned_paths, chunks=1)
 
