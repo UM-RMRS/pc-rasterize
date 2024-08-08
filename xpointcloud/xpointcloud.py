@@ -239,10 +239,6 @@ def _merge_pipe(pipe, inputs=None, tag=None):
     return pipe | Stage(type="filters.merge", **kwargs)
 
 
-def _filter_expr_pipe(pipe, expr):
-    return pipe | Stage(type="filters.expression", expression=expr)
-
-
 def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
     if len(paths) == 1:
         pipe = Pipeline(json.dumps(paths))
@@ -275,7 +271,7 @@ def _rasterize_chunk(
     agg_func="max",
     agg_func_args=(),
     nodata=np.nan,
-    filter_exprs=None,
+    pdal_filters=(),
     block_info=None,
 ):
     if isinstance(geobox, np.ndarray):
@@ -302,9 +298,9 @@ def _rasterize_chunk(
 
     # Load points that fall within this chunk
     pipe = _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs)
-    if filter_exprs is not None:
-        for fexpr in filter_exprs:
-            pipe = _filter_expr_pipe(pipe, fexpr)
+    if pdal_filters:
+        for f in pdal_filters:
+            pipe |= Stage(**f)
     n = pipe.execute()
     if n == 0:
         return np.full(shape, nodata, dtype=dtype)
@@ -392,6 +388,33 @@ def _bin_files_to_tiles(paths, tiles, dest_crs):
     return bins
 
 
+def _validate_filter_dict(f):
+    if "type" not in f or not f["type"].startswith("filters."):
+        raise ValueError("Filter objects must have type 'filters.*'")
+
+
+def _normalize_pdal_filters(filters):
+    if not isinstance(filters, (list, tuple)):
+        raise TypeError("pdal filters must be a list or tuple")
+
+    normd_filters = []
+    for filt in filters:
+        if isinstance(filt, Stage):
+            filt = filt.options
+            _validate_filter_dict(filt)
+            normd_filters.append(filt)
+        elif isinstance(filt, dict):
+            _validate_filter_dict(filt)
+            normd_filters.append(filt)
+        elif isinstance(filt, Pipeline):
+            normd_filters.extend(_normalize_pdal_filters(filt.stages))
+        else:
+            raise TypeError(
+                "filters must contain only dict, Stage, or Pipeline objects"
+            )
+    return normd_filters
+
+
 _DEFAULT_AGG_FUNCS = {
     # Pandas built-in funcs
     "count": "count",
@@ -422,7 +445,7 @@ def rasterize(
     cell_func_args=(),
     dtype=np.float32,
     nodata=np.nan,
-    filter_exprs=None,
+    pdal_filters=(),
     chunksize=None,
 ):
     if cell_func is None:
@@ -438,14 +461,7 @@ def rasterize(
         )
     if not isinstance(cell_func_args, (list, tuple)):
         raise TypeError("cell_func_args must be a tuple or list")
-    if filter_exprs is not None:
-        if (
-            not isinstance(filter_exprs, (list, tuple))
-            or len(filter_exprs) == 0
-        ):
-            raise TypeError("filter_exprs must be an iterable")
-        if not all(isinstance(expr, str) for expr in filter_exprs):
-            raise TypeError("filter expressions must all be strings")
+    pdal_filters = _normalize_pdal_filters(pdal_filters)
     dtype = np.dtype(dtype)
 
     if isinstance(paths, str):
@@ -478,7 +494,7 @@ def rasterize(
         agg_func=agg_func,
         agg_func_args=cell_func_args,
         nodata=nodata,
-        filter_exprs=filter_exprs,
+        pdal_filters=pdal_filters,
         chunks=chunks,
         meta=np.array((), dtype=dtype),
     )
