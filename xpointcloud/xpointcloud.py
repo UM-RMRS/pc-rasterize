@@ -15,6 +15,9 @@ import xarray as xr
 from odc.geo.geobox import GeoBox, GeoboxTiles
 from pdal import Pipeline, Stage
 
+__all__ = ["build_geobox", "get_file_quickinfo", "rasterize"]
+
+
 LidarInfo = namedtuple(
     "LidarInfo",
     (
