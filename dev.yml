@@ -1,0 +1,20 @@
+name: pcr-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - dask
+  - geopandas
+  - ipython
+  - numba
+  - numpy
+  - odc-geo
+  - pandas
+  - pdal
+  - python-pdal
+  - rasterio
+  - rioxarray
+  - ruff
+  - shapely>=2
+  - xarray
+  - pip
