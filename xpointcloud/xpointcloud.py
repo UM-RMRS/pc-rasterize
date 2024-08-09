@@ -30,6 +30,19 @@ LidarInfo = namedtuple(
 
 
 def get_file_quickinfo(path):
+    """Get header information from a file. Does not load any data.
+
+    The resulting `namedtuple` has the following fields:
+
+    * n_points : The number of points in the file.
+    * dims : The data fields in the file.
+    * crs : The CRS object for the file
+    * vert_units : The z units for the file's data
+    * bounds_2d : (minx, miny, maxx, maxy)
+    * bounds_3d : (minx, miny, minz, maxx, maxy, maxz)
+    * bbox : Bounding box polygon for the file.
+
+    """
     if isinstance(path, (str, Path)):
         pipe = pdal.Pipeline(json.dumps([str(path)]))
     else:
@@ -54,7 +67,30 @@ def get_file_quickinfo(path):
     )
 
 
-def build_geobox(paths, resolution, crs=None, buffer=None):
+def build_geobox(paths, resolution, crs=None, buffer=0):
+    """Helper function for building a GeoBox object to specify a grid.
+
+    This helps build a `GeoBox` that can be used with :ref:`rasterize`.
+
+    Parameters
+    ----------
+    paths : str or list of str
+        The point cloud files to build a grid for.
+    resolution : int
+        The resolution in `crs` units for the grid.
+    crs : int, str, rasterio.CRS, optional
+        The CRS to use for the grid. If left blank, the CRS from the point
+        cloud files is used.
+    buffer : int, float, optional
+        The distance in `crs` units to buffer or expand the grid from the
+        bounding box around the point cloud data. The default is 0.
+
+    Returns:
+    --------
+    geobox : Geobox
+        The resulting grid specification.
+
+    """
     if isinstance(paths, str):
         paths = [paths]
     if resolution < 0:
@@ -67,7 +103,7 @@ def build_geobox(paths, resolution, crs=None, buffer=None):
         boxes = boxes.to_crs(crs)
     else:
         target_crs = infos[0].crs
-    if buffer is not None:
+    if buffer:
         boxes = boxes.buffer(buffer)
     bbox = shapely.geometry.box(*boxes.total_bounds)
     return GeoBox.from_bbox(
@@ -127,6 +163,7 @@ def _entropy_agg(x):
 @series_to_array
 @nb.jit(nopython=True, nogil=True)
 def _cv_agg(x):
+    # coefficient of variation
     count = len(x)
     s = np.sum(x)
     ss = np.sum(x * x)
@@ -441,13 +478,90 @@ _DEFAULT_AGG_FUNCS = {
 def rasterize(
     paths,
     like: GeoBox,
-    cell_func=None,
+    cell_func="max",
     cell_func_args=(),
     dtype=np.float32,
     nodata=np.nan,
     pdal_filters=(),
     chunksize=None,
 ):
+    """Rasterize point cloud files to a given grid specification.
+
+    Parameters:
+    -----------
+    paths : str or list of str
+        The paths of point cloud files to rasterize.
+    like : GeoBox
+        The grid specification to build a raster from. See the helper function
+        :ref:`build_geobox`.
+    cell_func : str, callable, optional
+        The function to use when aggregating the points that fall within a
+        cell. If a `str`, the corresponding builtin function below is used:
+
+        'count'
+            Returns the number of points in a cell.
+        'cov'
+            Returns the covariance of the z values in a cell.
+        'max'
+            Returns the maximum z value in a cell. (Default)
+        'mean'
+            Returns the mean z value in a cell.
+        'median'
+            Returns the median z value in a cell.
+        'min'
+            Returns the minimum z value in a cell.
+        'nunique'
+            Returns the number of unique z values in a cell.
+        'sem'
+            Returns the unbiased standard error of the mean of the z values in
+            a cell.
+        'skew'
+            Returns the skew of the z values in a cell.
+        'std'
+            Returns the standard deviation of the z values in a cell.
+        'sum'
+            Returns the sum of the z values in a cell.
+        'quantile'
+            Returns the quantile value of the z values in a cell. Takes 1
+            argument which is a float in the range [0, 1] that sets the
+            quantile. The default is ``0.5``.
+        'var'
+            Returns the variance of the z values in a cell.
+        'asm'
+            Returns the angular second moment of the z values in a cell.
+        'cv'
+            Returns the coefficient of variation of the z values in a cell.
+        'entropy'
+            Returns the entropy of the z values in a cell.
+        'range'
+            Returns the difference between the max and min z values in a cell.
+
+        If a callable/function is provided, it is applied directly to the
+        points withing each cell. The function must take a single
+        `pandas.Series` object and return a single scalar. The default is the
+        `'max'` function.
+
+        Additional arguments can be passed in using the `cell_func_args`
+        keyword.
+    dtype : str, numpy.dtype, optional
+        The dtype to use for the result.
+    nodata : scalar, optional
+        The value to use for cells with no points. Default is NaN.
+    pdal_filters : tuple or list of {pdal.Stage, pdal.Pipeline, dict}, optional
+        A tuple or list of PDAL filters to be applied when loading the point
+        cloud. See PDAL's documentation for more information. Default is to
+        apply no additional filters.
+    chunksize : int, 2-tuple of int, optional
+        The dask chunksize to use when computing the raster. The default is to
+        let dask decide based on the dtype.
+
+    Returns
+    -------
+    raster : xarray.DataArray
+        The resulting raster as an `xarray.DataArray` object.
+
+
+    """
     if cell_func is None:
         agg_func = _DEFAULT_AGG_FUNCS["max"]
     elif callable(cell_func):
