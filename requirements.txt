@@ -1,0 +1,13 @@
+  dask
+  geopandas
+  numba
+  numpy
+  odc-geo
+  pandas
+  pdal
+  python-pdal
+  rasterio
+  rioxarray
+  ruff
+  shapely>=2
+  xarray
