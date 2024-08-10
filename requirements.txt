@@ -8,6 +8,5 @@
   python-pdal
   rasterio
   rioxarray
-  ruff
   shapely>=2
   xarray
