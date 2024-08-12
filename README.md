@@ -10,6 +10,7 @@ import glob
 files = sorted(glob.glob("../data/points/*.laz"))
 # Create a GeoBox grid specification with a 100m buffer around data
 geobox = pcr.build_geobox(files, resolution=0.50, crs="5070", buffer=100)
+# Build a lazy CHM raster
 chm = pcr.rasterize(
     files,
     geobox,
