@@ -557,14 +557,14 @@ def rasterize(
         The value to use for cells with no points. Default is NaN.
     pdal_filters : tuple or list of {pdal.Stage, pdal.Pipeline, dict}, optional
         A tuple or list of PDAL filters to be applied when loading the point
-        cloud. See PDAL's documentation for more information. Default is to
-        apply no additional filters.
+        cloud. See PDAL's
+        `filter documentation <https://pdal.io/en/latest/stages/filters.html>`_
+        for more information. Default is to apply no additional filters.
 
     Returns
     -------
     raster : xarray.DataArray
         The resulting raster as an `xarray.DataArray` object.
-
 
     """
     if cell_func is None:
