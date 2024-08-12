@@ -252,17 +252,6 @@ def _chunksize_2d_from_dtype(dtype):
     return da.empty((40_000, 40_000), dtype=dtype).chunksize
 
 
-def _build_input_pipeline(paths):
-    if len(paths) == 1:
-        return Pipeline(json.dumps(paths))
-
-    pipe = Pipeline()
-    for p in paths:
-        pipe |= Pipeline(json.dumps([p]))
-    pipe |= Stage(type="filters.merge")
-    return pipe
-
-
 def _crop_pipe(pipe, bbox, tag=None):
     minx, miny, maxx, maxy = bbox.bounds
     tag = {} if tag is None else {"tag": tag}
