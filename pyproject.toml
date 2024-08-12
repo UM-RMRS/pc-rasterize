@@ -1,0 +1,22 @@
+[project]
+name = "pc_rasterize"
+description = "Rasterize point cloud data"
+license = {text = "MIT License"}
+requires-python = ">=3.10"
+dynamic = ["version"]
+readme = "README.md"
+
+dependencies = [
+  "dask",
+  "geopandas",
+  "numba",
+  "numpy",
+  "odc-geo",
+  "pandas",
+  "pdal",
+  "python-pdal",
+  "rasterio",
+  "rioxarray",
+  "shapely>=2.0",
+  "xarray",
+]
