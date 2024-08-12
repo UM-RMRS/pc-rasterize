@@ -486,9 +486,9 @@ def rasterize(
     cell_func="max",
     cell_func_args=(),
     dtype=np.float32,
+    chunksize=None,
     nodata=np.nan,
     pdal_filters=(),
-    chunksize=None,
 ):
     """Rasterize point cloud files to a given grid specification.
 
@@ -550,15 +550,15 @@ def rasterize(
         keyword.
     dtype : str, numpy.dtype, optional
         The dtype to use for the result.
+    chunksize : int, 2-tuple of int, optional
+        The dask chunksize to use when computing the raster. The default is to
+        let dask decide based on the dtype.
     nodata : scalar, optional
         The value to use for cells with no points. Default is NaN.
     pdal_filters : tuple or list of {pdal.Stage, pdal.Pipeline, dict}, optional
         A tuple or list of PDAL filters to be applied when loading the point
         cloud. See PDAL's documentation for more information. Default is to
         apply no additional filters.
-    chunksize : int, 2-tuple of int, optional
-        The dask chunksize to use when computing the raster. The default is to
-        let dask decide based on the dtype.
 
     Returns
     -------
