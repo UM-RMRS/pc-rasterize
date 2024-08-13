@@ -98,7 +98,7 @@ def build_geobox(paths, resolution, crs=None, buffer=0):
     """
     if isinstance(paths, str):
         paths = [paths]
-    if resolution < 0:
+    if resolution <= 0:
         raise ValueError("resolution must be a positive scalar")
 
     infos = [get_file_quickinfo(p) for p in paths]
