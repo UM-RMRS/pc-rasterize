@@ -72,50 +72,6 @@ def get_file_quickinfo(path):
     )
 
 
-def build_geobox(paths, resolution, crs=None, buffer=0):
-    """Helper function for building a GeoBox object to specify a grid.
-
-    This helps build a `GeoBox` that can be used with :ref:`rasterize`.
-
-    Parameters
-    ----------
-    paths : str or list of str
-        The point cloud files to build a grid for.
-    resolution : int
-        The resolution in `crs` units for the grid.
-    crs : int, str, rasterio.CRS, optional
-        The CRS to use for the grid. If left blank, the CRS from the point
-        cloud files is used.
-    buffer : int, float, optional
-        The distance in `crs` units to buffer or expand the grid from the
-        bounding box around the point cloud data. The default is 0.
-
-    Returns:
-    --------
-    geobox : Geobox
-        The resulting grid specification.
-
-    """
-    if isinstance(paths, str):
-        paths = [paths]
-    if resolution <= 0:
-        raise ValueError("resolution must be a positive scalar")
-
-    infos = [get_file_quickinfo(p) for p in paths]
-    boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
-    if crs is not None:
-        target_crs = crs
-        boxes = boxes.to_crs(crs)
-    else:
-        target_crs = infos[0].crs
-    if buffer:
-        boxes = boxes.buffer(buffer)
-    bbox = shapely.geometry.box(*boxes.total_bounds)
-    return GeoBox.from_bbox(
-        bbox=bbox.bounds, crs=target_crs, resolution=resolution
-    )
-
-
 def series_to_array(func):
     def wrapper(x):
         if isinstance(x, pd.Series):
@@ -206,17 +162,19 @@ def _increase_bboxes_detail(bboxes, p=None):
     return bboxes.segmentize(_calculate_seg_len(*args))
 
 
-def _warp_bboxes_conservative(bboxes, dest_crs):
+def _warp_bboxes_conservative(bboxes, dest_crs, p_detail=None, p_buffer=None):
+    if p_buffer is None:
+        p_buffer = 0.05
     # Split each side of boxes into many lines. What are lines in the current
     # CRS could become curves in the destination CRS. This step helps to
     # preserve the curvature after the transformation.
-    bboxes = _increase_bboxes_detail(bboxes)
+    bboxes = _increase_bboxes_detail(bboxes, p=p_detail)
     # Warp
     warped_bboxes = bboxes.to_crs(dest_crs)
     # Add a small buffer to the warped boxes. Line segments can only
     # approximate curves so far. This should add enough margin to cover the
     # formerly enclosed space.
-    return warped_bboxes.buffer(_calculate_buffers(warped_bboxes))
+    return warped_bboxes.buffer(_calculate_buffers(warped_bboxes, p=p_buffer))
 
 
 def _flat_index(x, y, affine, shape):
@@ -620,4 +578,49 @@ def rasterize(
         .rio.set_spatial_dims(y_dim="y", x_dim="x")
         .rio.write_nodata(dtype.type(nodata))
         .rio.write_crs(crs)
+    )
+
+
+def build_geobox(paths, resolution, crs=None, buffer=0):
+    """Helper function for building a GeoBox object to specify a grid.
+
+    This helps build a `GeoBox` that can be used with :ref:`rasterize`.
+
+    Parameters
+    ----------
+    paths : str or list of str
+        The point cloud files to build a grid for.
+    resolution : int
+        The resolution in `crs` units for the grid.
+    crs : int, str, rasterio.CRS, optional
+        The CRS to use for the grid. If left blank, the CRS from the point
+        cloud files is used.
+    buffer : int, float, optional
+        The distance in `crs` units to buffer or expand the grid from the
+        bounding box around the point cloud data. The default is 0.
+
+    Returns:
+    --------
+    geobox : Geobox
+        The resulting grid specification.
+
+    """
+    if isinstance(paths, str):
+        paths = [paths]
+    if resolution <= 0:
+        raise ValueError("resolution must be a positive scalar")
+
+    infos = [get_file_quickinfo(p) for p in paths]
+    infos = _homogenize_crs(infos)
+    boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
+    if crs is not None:
+        target_crs = crs
+        boxes = boxes.to_crs(crs)
+    else:
+        target_crs = infos[0].crs
+    if buffer:
+        boxes = boxes.buffer(buffer)
+    bbox = shapely.geometry.box(*boxes.total_bounds)
+    return GeoBox.from_bbox(
+        bbox=bbox.bounds, crs=target_crs, resolution=resolution
     )
