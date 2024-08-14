@@ -17,7 +17,12 @@ from pdal import Pipeline, Stage
 
 from pc_rasterize._version import __version__  # noqa
 
-__all__ = ["build_geobox", "get_file_quickinfo", "rasterize"]
+__all__ = [
+    "build_geobox",
+    "get_file_quickinfo",
+    "load_bboxes_from_files",
+    "rasterize",
+]
 
 
 LidarInfo = namedtuple(
@@ -343,10 +348,21 @@ def _homogenize_crs(infos):
     return infos
 
 
-def _bin_files_to_tiles(paths, tiles, dest_crs):
+def _get_homogeneous_infos(paths):
     infos = [get_file_quickinfo(p) for p in paths]
     # Make sure that all bounding boxes are in the same CRS
-    infos = _homogenize_crs(infos)
+    return _homogenize_crs(infos)
+
+
+def load_bboxes_from_files(paths):
+    if isinstance(paths, str):
+        paths = [paths]
+    infos = _get_homogeneous_infos(paths)
+    return gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
+
+
+def _bin_files_to_tiles(paths, tiles, dest_crs):
+    infos = _get_homogeneous_infos(paths)
 
     src_crs = infos[0].crs
     tiles_shape = tuple(tiles.shape)
@@ -610,8 +626,7 @@ def build_geobox(paths, resolution, crs=None, buffer=0):
     if resolution <= 0:
         raise ValueError("resolution must be a positive scalar")
 
-    infos = [get_file_quickinfo(p) for p in paths]
-    infos = _homogenize_crs(infos)
+    infos = _get_homogeneous_infos(paths)
     boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
     if crs is not None:
         target_crs = crs
