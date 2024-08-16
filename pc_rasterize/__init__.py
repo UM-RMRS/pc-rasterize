@@ -19,6 +19,7 @@ from pc_rasterize._version import __version__  # noqa
 
 __all__ = [
     "build_geobox",
+    "filter_files_by_geom",
     "get_file_quickinfo",
     "load_bboxes_from_files",
     "rasterize",
@@ -639,3 +640,20 @@ def build_geobox(paths, resolution, crs=None, buffer=0):
     return GeoBox.from_bbox(
         bbox=bbox.bounds, crs=target_crs, resolution=resolution
     )
+
+
+def filter_files_by_geom(files, filter_geom, filter_geom_crs):
+    filter_geom_crs = rio.CRS.from_user_input(filter_geom_crs)
+    finfos = _get_homogeneous_infos(files)
+    files_crs = finfos[0].crs
+    file_geoms = gpd.GeoSeries([fi.bbox for fi in finfos], crs=files_crs)
+    if files_crs != filter_geom_crs:
+        file_geoms = _warp_bboxes_conservative(file_geoms, filter_geom_crs)
+    file_geoms = gpd.GeoDataFrame(
+        {"file": files, "geometry": file_geoms}, crs=filter_geom_crs
+    )
+    filter_df = gpd.GeoDataFrame(
+        {"geometry": [filter_geom]}, crs=filter_geom_crs
+    )
+    match = filter_df.sjoin(file_geoms)
+    return sorted(match.file.to_list())
