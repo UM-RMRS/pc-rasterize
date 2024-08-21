@@ -1,7 +1,7 @@
 # PC Rasterize: Rasterize Point Clouds
 ---
 
-### How to use:
+## How to use:
 
 ```python
 import pc_rasterize as pcr
@@ -26,6 +26,20 @@ chm = pcr.rasterize(
         }
     ],
 )
+```
+
+### Saving with default dask scheduling:
+
+```python
 # Use rioxarray to save to disk
 chm.rio.to_raster("points_chm.tiff")
+```
+
+### Saving with dask's more advanced scheduling:
+
+```python
+from dask.distributed import Client, LocalCluster, Lock
+
+with LocalCluster() as cluster, Client(cluster) as client:
+    chm.rio.to_raster("points_chm.tiff", tiled=True, lock=Lock("rio")
 ```
