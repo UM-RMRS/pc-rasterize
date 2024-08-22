@@ -36,6 +36,9 @@ chm.rio.to_raster("points_chm.tiff", tiled=True)
 ```
 
 ### Saving with dask's more advanced scheduling:
+Dask's more advanced 'distributed' scheduling also provides a dashboard at
+[http://localhost:8787/status](http://localhost:8787/status) for viewing
+progress in your browser.
 
 ```python
 from dask.distributed import Client, LocalCluster, Lock
