@@ -32,7 +32,7 @@ chm = pcr.rasterize(
 
 ```python
 # Use rioxarray to save to disk
-chm.rio.to_raster("points_chm.tiff")
+chm.rio.to_raster("points_chm.tiff", tiled=True)
 ```
 
 ### Saving with dask's more advanced scheduling:
@@ -41,5 +41,5 @@ chm.rio.to_raster("points_chm.tiff")
 from dask.distributed import Client, LocalCluster, Lock
 
 with LocalCluster() as cluster, Client(cluster) as client:
-    chm.rio.to_raster("points_chm.tiff", tiled=True, lock=Lock("rio")
+    chm.rio.to_raster("points_chm.tiff", tiled=True, lock=Lock("rio"))
 ```
