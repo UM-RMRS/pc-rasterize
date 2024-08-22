@@ -496,12 +496,15 @@ def rasterize(
             Returns the difference between the max and min z values in a cell.
 
         If a callable/function is provided, it is applied directly to the
-        points withing each cell. The function must take a single
+        points within each cell. The function must take a single
         `pandas.Series` object and return a single scalar. The default is the
         `'max'` function.
 
         Additional arguments can be passed in using the `cell_func_args`
         keyword.
+    cell_func_args : tuple, optional
+        A tuple of additional arguments to be passed to `cell_func`. The
+        default is to pass no additional arguments.
     dtype : str, numpy.dtype, optional
         The dtype to use for the result.
     chunksize : int, 2-tuple of int, optional
