@@ -1,4 +1,4 @@
-# PC Rasterize: Rasterize Point Clouds
+# PC Rasterize: Rasterize Point Clouds in Parallel
 ---
 
 ## How to use:
