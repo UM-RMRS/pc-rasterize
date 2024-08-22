@@ -139,16 +139,6 @@ def _cv_agg(x):
     return sd / m
 
 
-def _geoms_to_bboxes(geoms):
-    return gpd.GeoSeries(
-        [
-            shapely.geometry.box(b.minx, b.miny, b.maxx, b.maxy)
-            for b in geoms.bounds.itertuples()
-        ],
-        crs=geoms.crs,
-    )
-
-
 def _calculate_buffers(boxes, p=0.05):
     bdf = boxes.bounds
     bdf["xspan"] = bdf.maxx - bdf.minx
