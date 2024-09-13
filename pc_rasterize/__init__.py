@@ -306,6 +306,8 @@ def _rasterize_chunk(
 
 
 def _homogenize_crs(infos):
+    if len(infos) == 0:
+        return infos
     if not all(infos[0].crs == i.crs for i in infos):
         crs = infos[0].crs
         new_infos = [infos[0]]
