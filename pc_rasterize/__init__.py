@@ -367,11 +367,10 @@ def _bin_files_to_tiles(paths, tiles, dest_crs):
     else:
         data_bboxes_in_dest = src_bboxes.to_frame("geometry")
     data_bboxes_in_dest["path_idx"] = np.arange(len(paths))
-    tile_bboxes = gpd.GeoSeries(
-        [tiles.crop[idx].base.extent.geom for idx in np.ndindex(tiles_shape)],
-        crs=dest_crs,
-    ).to_frame("geometry")
-    tile_bboxes["tile_idx"] = list(np.ndindex(tiles_shape))
+    tile_2d_indices = list(np.ndindex(tiles_shape))
+    tile_geoms = [tiles.crop[idx].base.extent.geom for idx in tile_2d_indices]
+    tile_bboxes = gpd.GeoSeries(tile_geoms, crs=dest_crs).to_frame("geometry")
+    tile_bboxes["tile_idx"] = tile_2d_indices
 
     bins = np.empty(tiles_shape, dtype=object)
     for idx in np.ndindex(tiles_shape):
