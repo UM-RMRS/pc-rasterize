@@ -250,6 +250,17 @@ def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
     return _crop_pipe(pipe, dest_bbox)
 
 
+def _divide_geobox(geobox, chunksize_or_tiles):
+    if isinstance(chunksize_or_tiles, GeoboxTiles):
+        tiles = chunksize_or_tiles
+    else:
+        tiles = GeoboxTiles(geobox, tile_shape=chunksize_or_tiles)
+    geoboxes = np.empty(tuple(tiles.shape), dtype=object)
+    for ind in np.ndindex(tuple(tiles.shape)):
+        geoboxes[ind] = tiles.crop[ind].base
+    return geoboxes
+
+
 def _rasterize_chunk(
     geobox,
     paths,
@@ -553,10 +564,7 @@ def rasterize(
         chunksize = _chunksize_2d_from_dtype(dtype)
     tiles = GeoboxTiles(like, tile_shape=chunksize)
     chunks = tiles.chunks
-
-    geoboxes = np.empty(tuple(tiles.shape), dtype=object)
-    for ind in np.ndindex(tuple(tiles.shape)):
-        geoboxes[ind] = tiles.crop[ind].base
+    geoboxes = _divide_geobox(like, tiles)
     geoboxes = da.from_array(geoboxes, chunks=1)
 
     # Array with dims equal to the number of tiles in each dim (y, x). Each
