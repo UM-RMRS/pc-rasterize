@@ -356,9 +356,13 @@ def load_bboxes_from_files(paths):
 
 def _bin_files_to_tiles(paths, tiles, dest_crs):
     infos = _get_homogeneous_infos(paths)
-
     src_crs = infos[0].crs
+
     tiles_shape = tuple(tiles.shape)
+    tile_2d_indices = list(np.ndindex(tiles_shape))
+    tile_geoms = [tiles.crop[idx].base.extent.geom for idx in tile_2d_indices]
+    tile_bboxes = gpd.GeoSeries(tile_geoms, crs=dest_crs).to_frame("geometry")
+    tile_bboxes["tile_idx"] = tile_2d_indices
 
     if src_crs != dest_crs:
         src_bboxes = gpd.GeoSeries([i.bbox for i in infos], crs=src_crs)
@@ -369,13 +373,9 @@ def _bin_files_to_tiles(paths, tiles, dest_crs):
     else:
         data_bboxes_in_dest = src_bboxes.to_frame("geometry")
     data_bboxes_in_dest["path_idx"] = np.arange(len(paths))
-    tile_2d_indices = list(np.ndindex(tiles_shape))
-    tile_geoms = [tiles.crop[idx].base.extent.geom for idx in tile_2d_indices]
-    tile_bboxes = gpd.GeoSeries(tile_geoms, crs=dest_crs).to_frame("geometry")
-    tile_bboxes["tile_idx"] = tile_2d_indices
 
     bins = np.empty(tiles_shape, dtype=object)
-    for idx in np.ndindex(tiles_shape):
+    for idx in tile_2d_indices:
         bins[idx] = []
     matches = tile_bboxes.sjoin(data_bboxes_in_dest).sort_values("path_idx")
     for pi, mdf in matches.groupby("path_idx"):
