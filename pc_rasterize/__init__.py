@@ -311,7 +311,9 @@ def _rasterize_chunk(
     # Build the dataframe
     pts_df = pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
     pipe = None
-    pts_df = pts_df[["X", "Y", "Z"]]
+    # Use copy to silence pandas chained assignment warning. It doesn't apply
+    # here
+    pts_df = pts_df[["X", "Y", "Z"]].copy()
     # Bin each point to a pixel location
     pts_df["_bin_"] = _flat_index(
         pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
