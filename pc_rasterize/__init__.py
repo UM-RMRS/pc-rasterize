@@ -1,4 +1,3 @@
-import json
 from collections import namedtuple
 from pathlib import Path
 
@@ -40,6 +39,14 @@ LidarInfo = namedtuple(
 )
 
 
+def _path_to_pipe(path, nthreads=1):
+    reader = pdal.Reader(path)
+    if nthreads is not None and nthreads > 0:
+        # Don't want to over-allocate threads and cause them all to starve
+        reader._options["threads"] = nthreads
+    return reader.pipeline()
+
+
 def get_file_quickinfo(path):
     """Get header information from a file. Does not load any data.
 
@@ -55,7 +62,7 @@ def get_file_quickinfo(path):
 
     """
     if isinstance(path, (str, Path)):
-        pipe = pdal.Pipeline(json.dumps([str(path)]))
+        pipe = _path_to_pipe(str(path))
     else:
         raise TypeError("path must be a string or Path object")
 
@@ -226,7 +233,7 @@ def _merge_pipe(pipe, inputs=None, tag=None):
 
 def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
     if len(paths) == 1:
-        pipe = Pipeline(json.dumps(paths))
+        pipe = _path_to_pipe(paths[0])
         info = get_file_quickinfo(paths[0])
         if info.crs != dest_crs:
             pipe |= Stage(
@@ -239,7 +246,7 @@ def _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs):
     homogeneous_crs = all(infos[0].crs == i.crs for i in infos)
     pipe = Pipeline()
     for p in paths:
-        pipe |= Pipeline(json.dumps([p]))
+        pipe |= _path_to_pipe(p)
         if not homogeneous_crs:
             pipe |= Stage(
                 type="filters.reprojection", out_srs=dest_crs.to_wkt()
