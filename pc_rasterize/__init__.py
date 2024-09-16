@@ -268,6 +268,47 @@ def _divide_geobox(geobox, chunksize_or_tiles):
     return geoboxes
 
 
+def _load_pc_data(paths, dest_bbox, dest_crs, pdal_filters):
+    # Load points that fall within this raster box
+    pipe = _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs)
+    if pdal_filters:
+        for f in pdal_filters:
+            pipe |= Stage(**f)
+    n = pipe.execute()
+    if n == 0:
+        return pd.DataFrame()
+    # Build the dataframe
+    return pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
+
+
+def _rasterize(
+    geobox, paths, agg_func, agg_func_args, nodata, pdal_filters, dtype
+):
+    dest_crs = geobox.crs
+    affine = geobox.affine
+    dest_bbox = geobox.extent.geom
+    shape = tuple(geobox.shape)
+    if not paths:
+        return np.full(shape, nodata, dtype=dtype)
+
+    pts_df = _load_pc_data(paths, dest_bbox, dest_crs, pdal_filters)
+    if not len(pts_df):
+        return np.full(shape, nodata, dtype=dtype)
+
+    # Use copy to silence pandas chained assignment warning. It doesn't apply
+    # here
+    pts_df = pts_df[["X", "Y", "Z"]].copy()
+    # Bin each point to a pixel location
+    pts_df["_bin_"] = _flat_index(
+        pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
+    )
+
+    z_agg = pts_df.groupby("_bin_").Z.agg(agg_func, *agg_func_args)
+    grid_flat = np.full(np.prod(shape), nodata, dtype=dtype)
+    grid_flat[z_agg.index.to_numpy()] = z_agg.to_numpy()
+    return grid_flat.reshape(shape)
+
+
 def _rasterize_chunk(
     geobox,
     paths,
@@ -290,39 +331,21 @@ def _rasterize_chunk(
     if geobox.crs is None:
         raise ValueError("No destination CRS specified")
 
-    dest_crs = geobox.crs
-    affine = geobox.affine
     shape = tuple(geobox.shape)
-    dest_bbox = geobox.extent.geom
     assert shape == block_info[None]["chunk-shape"]
     dtype = block_info[None]["dtype"]
-    if len(paths) == 0:
+    if not paths:
         return np.full(shape, nodata, dtype=dtype)
 
-    # Load points that fall within this chunk
-    pipe = _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs)
-    if pdal_filters:
-        for f in pdal_filters:
-            pipe |= Stage(**f)
-    n = pipe.execute()
-    if n == 0:
-        return np.full(shape, nodata, dtype=dtype)
-
-    # Build the dataframe
-    pts_df = pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
-    pipe = None
-    # Use copy to silence pandas chained assignment warning. It doesn't apply
-    # here
-    pts_df = pts_df[["X", "Y", "Z"]].copy()
-    # Bin each point to a pixel location
-    pts_df["_bin_"] = _flat_index(
-        pts_df.X.to_numpy(), pts_df.Y.to_numpy(), affine, shape
+    return _rasterize(
+        geobox,
+        paths,
+        agg_func=agg_func,
+        agg_func_args=agg_func_args,
+        nodata=nodata,
+        pdal_filters=pdal_filters,
+        dtype=dtype,
     )
-
-    z_agg = pts_df.groupby("_bin_").Z.agg(agg_func, *agg_func_args)
-    grid_flat = np.full(np.prod(shape), nodata, dtype=dtype)
-    grid_flat[z_agg.index.to_numpy()] = z_agg.to_numpy()
-    return grid_flat.reshape(shape)
 
 
 def _homogenize_crs(infos):
