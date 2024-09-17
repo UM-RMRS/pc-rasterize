@@ -317,6 +317,10 @@ def _rasterize(
     return grid_flat.reshape(shape)
 
 
+_MAX_RECURSE_LEVEL = 2
+_N_POINTS_THRESHOLD = 2_000_000
+
+
 def _rasterize_chunk(
     geobox,
     paths,
@@ -325,6 +329,7 @@ def _rasterize_chunk(
     nodata=np.nan,
     pdal_filters=(),
     block_info=None,
+    _level=0,
 ):
     if isinstance(geobox, np.ndarray):
         geobox = geobox.item()
@@ -345,15 +350,52 @@ def _rasterize_chunk(
     if not paths:
         return np.full(shape, nodata, dtype=dtype)
 
-    return _rasterize(
-        geobox,
-        paths,
-        agg_func=agg_func,
-        agg_func_args=agg_func_args,
-        nodata=nodata,
-        pdal_filters=pdal_filters,
-        dtype=dtype,
-    )
+    expected_points = sum(get_file_quickinfo(p).n_points for p in paths)
+    if (
+        expected_points > _N_POINTS_THRESHOLD
+        and _level < _MAX_RECURSE_LEVEL
+        and not any(d // 2 == 0 for d in shape)
+    ):
+        # Break the chunk into 4 sub-chunks and recurse into each one.
+        rc = shape[0] // 2
+        cc = shape[1] // 2
+        chunks = ((rc, shape[0] - rc), (cc, shape[1] - cc))
+        tiles = GeoboxTiles(geobox, tile_shape=chunks)
+        geoboxes = _divide_geobox(geobox, tiles)
+        binned_paths = _bin_files_to_tiles(paths, tiles, geobox.crs)
+        idxs = list(np.ndindex(geoboxes.shape))
+        result = [[], []]
+        for idx in idxs:
+            sub_geobox = geoboxes[idx]
+            sub_paths = binned_paths[idx]
+            sub_block_info = {
+                None: {"chunk-shape": sub_geobox.shape, "dtype": dtype}
+            }
+            result[idx[0]].append(
+                # INFO: Recursion
+                _rasterize_chunk(
+                    sub_geobox,
+                    sub_paths,
+                    agg_func=agg_func,
+                    agg_func_args=agg_func_args,
+                    nodata=nodata,
+                    pdal_filters=pdal_filters,
+                    block_info=sub_block_info,
+                    _level=_level + 1,
+                )
+            )
+        # Stitch the results into the full sized chunk
+        return np.block(result)
+    else:
+        return _rasterize(
+            geobox,
+            paths,
+            agg_func=agg_func,
+            agg_func_args=agg_func_args,
+            nodata=nodata,
+            pdal_filters=pdal_filters,
+            dtype=dtype,
+        )
 
 
 def _homogenize_crs(infos):
