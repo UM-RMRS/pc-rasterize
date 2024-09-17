@@ -317,7 +317,7 @@ def _rasterize(
     return grid_flat.reshape(shape)
 
 
-_MAX_RECURSE_LEVEL = 2
+_MAX_RECURSE_LEVEL = 3
 _N_POINTS_THRESHOLD = 2_000_000
 
 
@@ -329,7 +329,8 @@ def _rasterize_chunk(
     nodata=np.nan,
     pdal_filters=(),
     block_info=None,
-    _level=0,
+    max_rlevel=0,
+    _rlevel=0,
 ):
     if isinstance(geobox, np.ndarray):
         geobox = geobox.item()
@@ -353,7 +354,7 @@ def _rasterize_chunk(
     expected_points = sum(get_file_quickinfo(p).n_points for p in paths)
     if (
         expected_points > _N_POINTS_THRESHOLD
-        and _level < _MAX_RECURSE_LEVEL
+        and _rlevel < max_rlevel
         and not any(d // 2 == 0 for d in shape)
     ):
         # Break the chunk into 4 sub-chunks and recurse into each one.
@@ -381,7 +382,7 @@ def _rasterize_chunk(
                     nodata=nodata,
                     pdal_filters=pdal_filters,
                     block_info=sub_block_info,
-                    _level=_level + 1,
+                    _rlevel=_rlevel + 1,
                 )
             )
         # Stitch the results into the full sized chunk
@@ -537,6 +538,7 @@ def rasterize(
     chunksize=None,
     nodata=np.nan,
     pdal_filters=(),
+    memory_throttling=0,
 ):
     """Rasterize point cloud files to a given grid specification.
 
@@ -611,6 +613,17 @@ def rasterize(
         cloud. See PDAL's
         `filter documentation <https://pdal.io/en/latest/stages/filters.html>`_
         for more information. Default is to apply no additional filters.
+    memory_throttling : int, optional
+        The amount by which memory usage should be throttled for the Dask
+        workers. Acceptible values are ``0``, ``1``, ``2``, and ``3``.
+        A value of ``0`` does not throttle memory at all. This results in
+        potentially large amounts of memory being used but also achieves the
+        greatest speed. Higher values cause memory to be conserved more. A
+        value of ``3`` very tightly restricts the amount of memory that can be
+        used by each worker but causes the longest running time. If your
+        `rasterize` task runs out of memory, try adjusting this number up. This
+        option is especially helpful for systems with a large number of CPU
+        cores but small amount of system memory. The default is ``0``.
 
     Returns
     -------
@@ -631,6 +644,11 @@ def rasterize(
         )
     if not isinstance(cell_func_args, (list, tuple)):
         raise TypeError("cell_func_args must be a tuple or list")
+    if memory_throttling < 0 or memory_throttling > _MAX_RECURSE_LEVEL:
+        raise ValueError(
+            "memory_throttling value must be between 0 and "
+            f"{_MAX_RECURSE_LEVEL}, inclusive."
+        )
     pdal_filters = _normalize_pdal_filters(pdal_filters)
     dtype = np.dtype(dtype)
 
@@ -664,6 +682,7 @@ def rasterize(
         pdal_filters=pdal_filters,
         chunks=chunks,
         meta=np.array((), dtype=dtype),
+        max_rlevel=memory_throttling,
     )
     return (
         xr.DataArray(
