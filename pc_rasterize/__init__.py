@@ -268,17 +268,25 @@ def _divide_geobox(geobox, chunksize_or_tiles):
     return geoboxes
 
 
+PDAL_CHUNKSIZE = 100_000
+
+
 def _load_pc_data(paths, dest_bbox, dest_crs, pdal_filters):
     # Load points that fall within this raster box
     pipe = _build_warped_merged_cropped_pipeline(paths, dest_bbox, dest_crs)
     if pdal_filters:
         for f in pdal_filters:
             pipe |= Stage(**f)
-    n = pipe.execute()
-    if n == 0:
+    if not pipe.streamable:
+        n = pipe.execute()
+        if n == 0:
+            return pd.DataFrame()
+        return pd.DataFrame(np.concatenate(list(pipe.arrays)))
+    # Streaming data
+    arrays = list(pipe.iterator(chunk_size=PDAL_CHUNKSIZE))
+    if not arrays:
         return pd.DataFrame()
-    # Build the dataframe
-    return pd.concat([pd.DataFrame(arr) for arr in pipe.arrays])
+    return pd.DataFrame(np.concatenate(arrays))
 
 
 def _rasterize(
