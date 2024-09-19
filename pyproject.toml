@@ -1,10 +1,22 @@
 [project]
 name = "pc_rasterize"
-description = "Rasterize point cloud data"
+authors = [
+  {name = "Fred Bunt", email = "fredrick.bunt@umt.edu"},
+]
+description = "Rasterize point cloud data in parallel"
 license = {text = "MIT License"}
+# Based on xarray and dask minimum version
 requires-python = ">=3.10"
 dynamic = ["version"]
 readme = "README.md"
+keywords = ["point", "cloud", "raster", "spatial"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: GIS",
+]
 
 dependencies = [
   "dask",
@@ -17,6 +29,10 @@ dependencies = [
   "python-pdal",
   "rasterio",
   "rioxarray",
-  "shapely>=2.0",
+  "shapely>=2",
   "xarray",
 ]
+
+[project.urls]
+homepage = "https://github.com/UM-RMRS/pc-rasterize"
+issue-tracker = "https://github.com/UM-RMRS/pc-rasterize/issues"
