@@ -1,6 +1,14 @@
 # PC Rasterize: Rasterize Point Clouds in Parallel
 ---
 
+## Installation
+
+`pc_rasterize` can be installed using conda:
+
+```sh
+$ conda install -c conda-forge pc_rasterize
+```
+
 ## How to use:
 
 ```python
