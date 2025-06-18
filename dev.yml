@@ -11,6 +11,7 @@ dependencies:
   - odc-geo
   - pandas
   - pdal
+  - python-build
   - python-pdal
   - rasterio
   - rioxarray
