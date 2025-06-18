@@ -70,8 +70,27 @@ def get_file_quickinfo(path):
     info = qinfo[list(qinfo)[0]]
     dims = tuple(d.strip() for d in info["dimensions"].split(","))
     n_points = info["num_points"]
-    crs = rio.CRS.from_user_input(info["srs"]["json"])
-    vert_units = info["srs"]["units"]["vertical"]
+    
+    # Handle missing SRS metadata
+    crs = None
+    vert_units = None
+    
+    srs_info = info.get("srs", {})
+    if srs_info:
+        # Try to extract CRS information
+        srs_json = srs_info.get("json")
+        if srs_json:
+            try:
+                crs = rio.CRS.from_user_input(srs_json)
+            except (ValueError, TypeError, rio.errors.CRSError):
+                # If CRS parsing fails, leave as None
+                pass
+        
+        # Try to extract vertical units
+        units_info = srs_info.get("units", {})
+        if units_info:
+            vert_units = units_info.get("vertical")
+
     bounds_2d = tuple(
         info["bounds"][k] for k in ("minx", "miny", "maxx", "maxy")
     )
@@ -730,6 +749,20 @@ def build_geobox(paths, resolution, crs=None, buffer=0):
     geobox : Geobox
         The resulting grid specification.
 
+    Notes:
+    ------
+    **Known Issue**: When point cloud files lack CRS metadata and crs=None is 
+    passed, GeoBox.from_bbox() defaults to EPSG:4326. This can create invalid 
+    geometries when coordinates are in projected systems (e.g., UTM coordinates 
+    being treated as lat/lon). 
+    
+    **Potential Solutions**:
+    1. Require explicit CRS: Raise error when both file CRS and user CRS are None
+    2. Coordinate-based CRS detection: Guess appropriate CRS from coordinate ranges  
+    3. Default to reasonable projected CRS: Use sensible default for coordinate range
+    
+    For files without CRS metadata, explicitly specify the crs parameter.
+
     """
     if isinstance(paths, str):
         paths = [paths]
@@ -740,7 +773,12 @@ def build_geobox(paths, resolution, crs=None, buffer=0):
     boxes = gpd.GeoSeries([i.bbox for i in infos], crs=infos[0].crs)
     if crs is not None:
         target_crs = crs
-        boxes = boxes.to_crs(crs)
+        if infos[0].crs is not None:
+            # File has CRS metadata - transform to target CRS
+            boxes = boxes.to_crs(crs)
+        else:
+            # File has no CRS metadata - assume coordinates are already in target CRS
+            boxes = boxes.set_crs(crs)
     else:
         target_crs = infos[0].crs
     if buffer:
